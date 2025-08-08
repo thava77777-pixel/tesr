@@ -9,7 +9,7 @@
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #111827; }
         .movie-card { transition: transform 0.3s ease, box-shadow 0.3s ease; }
-        .movie-card:hover { transform: scale(1.05); box-shadow: 0 0 25px rgba(99, 102, 241, 0.6); }
+        .movie-card-playable:hover { transform: scale(1.05); box-shadow: 0 0 25px rgba(99, 102, 241, 0.6); }
         .progress-bar-bg { background-color: #374151; }
         .progress-bar-fg { background-color: #4f46e5; transition: width 0.5s ease-in-out; }
     </style>
@@ -41,11 +41,15 @@
 
         function createMovieCard(movie) {
             const card = document.createElement('div');
-            card.className = 'bg-gray-800 rounded-lg overflow-hidden group';
+            card.className = 'bg-gray-800 rounded-lg overflow-hidden group movie-card';
+            
+            const isPlayable = movie.status === 'completed' || movie.status === 'streaming_torrent' || movie.status === 'streamable';
+            const isBuffering = movie.status === 'downloading' || movie.status === 'buffering_torrent';
+
             let cardContent = `
                 <div class="relative">
-                    <img src="${movie.poster}" alt="${movie.title}" class="w-full h-auto object-cover aspect-[2/3]">
-                    <div class="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <img src="${movie.poster}" alt="${movie.title}" class="w-full h-auto object-cover aspect-[2/3]" onerror="this.onerror=null;this.src='/static/placeholder.png';">
+                    <div class="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center opacity-0 ${isPlayable ? 'group-hover:opacity-100' : ''} transition-opacity">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-white" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" /></svg>
                     </div>
                 </div>
@@ -53,21 +57,32 @@
                     <h3 class="font-semibold truncate text-gray-200">${movie.title}</h3>
             `;
 
-            if (movie.status && movie.status.startsWith('downloading')) {
+            if (isBuffering || movie.status === 'streaming_torrent') {
                 const progress = movie.progress || 0;
+                let statusText = 'Downloading...';
+                if (movie.status === 'buffering_torrent') statusText = 'Buffering...';
+                if (movie.status === 'streaming_torrent') statusText = 'Streaming...';
+
                 cardContent += `
-                    <p class="text-xs text-yellow-400 mb-1">Downloading...</p>
+                    <p class="text-xs text-yellow-400 mb-1">${statusText}</p>
                     <div class="w-full progress-bar-bg rounded-full h-1.5">
                         <div class="progress-bar-fg h-1.5 rounded-full" style="width: ${progress}%"></div>
                     </div>
                 `;
+            } else if (movie.status === 'streamable') {
+                 cardContent += `<p class="text-xs text-cyan-400 mb-1 h-1.5">Ready to Stream</p><div class="h-1.5"></div>`;
             } else {
-                 card.classList.add('cursor-pointer', 'movie-card');
-                 card.addEventListener('click', () => playMovie(movie.filename));
+                 cardContent += `<p class="text-xs text-green-400 mb-1 h-1.5">Completed</p><div class="h-1.5"></div>`;
             }
             
             cardContent += `</div>`;
             card.innerHTML = cardContent;
+
+            if (isPlayable) {
+                card.classList.add('cursor-pointer', 'movie-card-playable');
+                card.addEventListener('click', () => playMovie(movie));
+            }
+
             return card;
         }
 
@@ -92,9 +107,18 @@
             }
         }
 
-        function playMovie(filename) {
+        function playMovie(movie) {
             playerContainer.classList.remove('hidden');
-            videoPlayer.src = `${BASE_URL}/video/${filename}`;
+            let videoSource;
+
+            // If it has a direct stream_url, use it. Otherwise, build the local torrent URL.
+            if (movie.stream_url) {
+                videoSource = movie.stream_url;
+            } else {
+                videoSource = `${BASE_URL}/video/${movie.filename}`;
+            }
+
+            videoPlayer.src = videoSource;
             videoPlayer.load();
             videoPlayer.play();
             playerContainer.scrollIntoView({ behavior: 'smooth' });
@@ -102,8 +126,7 @@
 
         document.addEventListener('DOMContentLoaded', () => {
             loadMovies();
-            // Refresh the library every 5 seconds to update progress bars
-            setInterval(loadMovies, 5000);
+            setInterval(loadMovies, 5000); // Refresh library status every 5 seconds
         });
     </script>
 </body>
